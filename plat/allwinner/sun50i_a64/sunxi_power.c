@@ -9,6 +9,7 @@
 #include <debug.h>
 #include <delay_timer.h>
 #include <errno.h>
+#include <mentor/mi2cv.h>
 #include <mmio.h>
 #include <platform_def.h>
 #include <sunxi_def.h>
@@ -18,7 +19,10 @@ enum pmic_type {
 	GENERIC_H5,
 	GENERIC_A64,
 	REF_DESIGN_H5,	/* regulators controlled by GPIO pins on port L */
+	AXP803_I2C,	/* PMIC on most A64 boards, using I2C */
 } pmic;
+
+#define AXP803_ADDR	(0x68 >> 1)
 
 /* Enable GPIOs PL5, PL8 and PL9 as GPIO outputs. */
 static void sunxi_init_pl_pio(void)
@@ -89,8 +93,82 @@ void sunxi_turn_off_soc(uint16_t socid)
 	}
 }
 
+static int sunxi_init_r_i2c(uint16_t socid)
+{
+	uint32_t i2c_func;
+
+	switch (socid) {
+	case SUNXI_SOC_H5: i2c_func = 0x22; break;
+	case SUNXI_SOC_A64: i2c_func = 0x33; break;
+	default:
+		INFO("R_I2C on Allwinner 0x%x SoC not supported\n", socid);
+		return -ENODEV;
+	}
+
+	/* un-gate R_PIO clock */
+	mmio_setbits_32(SUNXI_R_PRCM_BASE + 0x28, BIT(0));
+
+	/* switch pins PL0 and PL1 to I2C */
+	mmio_clrsetbits_32(SUNXI_R_PIO_BASE + 0x00, 0xffU, i2c_func);
+
+	/* level 2 drive strength */
+	mmio_clrsetbits_32(SUNXI_R_PIO_BASE + 0x14, 0x0fU, 0xaU);
+
+	/* set both pins to pull-up */
+	mmio_clrsetbits_32(SUNXI_R_PIO_BASE + 0x1c, 0x0fU, 0x5U);
+
+	/* assert, then de-assert reset of R_I2C */
+	mmio_clrbits_32(SUNXI_R_PRCM_BASE + 0xb0, BIT(6));
+	udelay(100);
+	mmio_setbits_32(SUNXI_R_PRCM_BASE + 0xb0, BIT(6));
+
+        /* un-gate R_I2C clock */
+	mmio_setbits_32(SUNXI_R_PRCM_BASE + 0x28, BIT(6));
+
+	/* call mi2cv driver */
+	i2c_init((void *)SUNXI_R_I2C_BASE);
+
+	return 0;
+}
+
+static int axp803_i2c_probe(void)
+{
+	int ret;
+	uint8_t val = 0;
+
+	/* read the "IC type no." register */
+	ret = i2c_read(AXP803_ADDR, 0x3, 1, &val, 1);
+
+	if ((ret == 0) && ((val & 0xcf) == 0x41))
+		return 0;
+
+	if (ret) {
+		NOTICE("BL31: PMIC: No I2C communication with AXP803.\n");
+		ret = -EPERM;
+	} else
+		NOTICE("BL31: PMIC: Non-AXP803 chip attached at AXP803's address.\n");
+
+	return ret;
+}
+
+static int axp_setbits_8(uint8_t reg, uint8_t set_mask)
+{
+	uint8_t regval;
+	int ret;
+
+	ret = i2c_read(AXP803_ADDR, reg, 1, &regval, 1);
+	if (ret)
+		return ret;
+
+	regval |= set_mask;
+
+	return i2c_write(AXP803_ADDR, reg, 1, &regval, 1);
+}
+
 int sunxi_pmic_setup(uint16_t socid)
 {
+	int ret;
+
 	switch (socid) {
 	case SUNXI_SOC_H5:
 		pmic = REF_DESIGN_H5;
@@ -98,11 +176,46 @@ int sunxi_pmic_setup(uint16_t socid)
 		break;
 	case SUNXI_SOC_A64:
 		pmic = GENERIC_A64;
+		ret = sunxi_init_r_i2c(socid);
+		if (ret)
+			return ret;
+
+		ret = axp803_i2c_probe();
+		if (ret)
+			return ret;
+
+		pmic = AXP803_I2C;
+		NOTICE("BL31: PMIC: Found AXP803 on R_I2C.\n");
 		break;
 	default:
 		NOTICE("BL31: PMIC: No support for Allwinner %x SoC.\n", socid);
 		return -ENODEV;
 	}
+	return 0;
+}
+
+static int switch_axp_to_i2c(void)
+{
+	uint32_t reg = mmio_read_32(SUNXI_R_PIO_BASE + 0x00);
+
+	/* If PL0/1 are configured for I2C already, there is nothing to do. */
+	if ((reg & 0xff) == 0x33)
+		return 0;
+
+	/* If PL0/1 is not configured for RSB, we are clueless. Give up. */
+	if ((reg & 0xff) != 0x22)
+		return -ENODEV;
+
+	/* The AXP is probably driven via RSB. Set it back to I2C. */
+	mmio_write_32(SUNXI_R_RSB_BASE + 0x2c, 0x4e);	/* byte write */
+	mmio_write_32(SUNXI_R_RSB_BASE + 0x30, 0x2d << 16);	/* chip addr */
+	mmio_write_32(SUNXI_R_RSB_BASE + 0x10, 0x3e);	/* register 0x3e */
+	mmio_write_32(SUNXI_R_RSB_BASE + 0x1c, 0);	/* != 0x7c: I2C */
+	mmio_write_32(SUNXI_R_RSB_BASE + 0x00, 0x80);/* start transaction */
+
+	/* wait for PMIC to switch over */
+	udelay(1000);
+
 	return 0;
 }
 
@@ -131,6 +244,14 @@ void __dead2 sunxi_power_down(void)
 		 * Note: Clearing PL8 will reset the board, so keep it up.
 		 */
 		mmio_clrsetbits_32(SUNXI_R_PIO_BASE + 0x10, 0x600, 0x20);
+		break;
+	case AXP803_I2C:
+		switch_axp_to_i2c();
+		/* (Re-)init I2C in case the rich OS has disabled it. */
+		sunxi_init_r_i2c(SUNXI_SOC_A64);
+
+		/* Set "power disable control" bit */
+		axp_setbits_8(0x32, BIT(7));
 		break;
 	default:
 		break;
