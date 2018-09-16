@@ -13,6 +13,8 @@ PLAT_INCLUDES		:=	-Iinclude/plat/arm/common		\
 				-I${AW_PLAT}/common/include		\
 				-I${AW_PLAT}/${PLAT}/include
 
+include lib/libfdt/libfdt.mk
+
 PLAT_BL_COMMON_SOURCES	:=	drivers/console/${ARCH}/console.S	\
 				drivers/mentor/i2c/mi2cv.c		\
 				drivers/ti/uart/${ARCH}/16550_console.S	\
