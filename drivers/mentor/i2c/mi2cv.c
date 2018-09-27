@@ -180,7 +180,7 @@ static int mentor_i2c_stop_bit_set(void)
 		      __func__, __LINE__, status);
 		return -EAGAIN;
 	}
-	if (status != I2C_STATUS_IDLE) {
+	if ((status & 0xf8) != I2C_STATUS_IDLE) {
 		ERROR("Got status %x after enable stop bit.\n", status);
 		return -EPERM;
 	}
