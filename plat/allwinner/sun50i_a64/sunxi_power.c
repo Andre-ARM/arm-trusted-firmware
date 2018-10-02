@@ -16,6 +16,8 @@
 #include <sunxi_def.h>
 #include <sunxi_mmap.h>
 
+void sunxi_cpu_off(int cluster, int core);
+
 enum pmic_type {
 	GENERIC_H5,
 	GENERIC_A64,
@@ -384,6 +386,10 @@ void __dead2 sunxi_power_down(void)
 		 * Note: Clearing PL8 will reset the board, so keep it up.
 		 */
 		mmio_clrsetbits_32(SUNXI_R_PIO_BASE + 0x10, 0x600, 0x20);
+
+		sunxi_cpu_off(MPIDR_AFFLVL1_VAL(read_mpidr()),
+			      MPIDR_AFFLVL0_VAL(read_mpidr()));
+
 		break;
 	case AXP803_I2C:
 		switch_axp_to_i2c();
