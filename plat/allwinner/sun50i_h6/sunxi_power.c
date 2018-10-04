@@ -26,27 +26,21 @@ enum pmic_type pmic;
 
 static int sunxi_init_r_i2c(void)
 {
-	uint32_t reg;
-
 	/* switch pins PL0 and PL1 to I2C */
-	reg = mmio_read_32(SUNXI_R_PIO_BASE + 0x00);
-	mmio_write_32(SUNXI_R_PIO_BASE + 0x00, (reg & ~0xff) | 0x33);
+	mmio_clrsetbits_32(SUNXI_R_PIO_BASE + 0x00, 0xff, 0x33);
 
 	/* level 2 drive strength */
-	reg = mmio_read_32(SUNXI_R_PIO_BASE + 0x14);
-	mmio_write_32(SUNXI_R_PIO_BASE + 0x14, (reg & ~0x0f) | 0xa);
+	mmio_clrsetbits_32(SUNXI_R_PIO_BASE + 0x04, 0x0f, 0x0a);
 
 	/* set both ports to pull-up */
-	reg = mmio_read_32(SUNXI_R_PIO_BASE + 0x1c);
-	mmio_write_32(SUNXI_R_PIO_BASE + 0x1c, (reg & ~0x0f) | 0x5);
+	mmio_clrsetbits_32(SUNXI_R_PIO_BASE + 0x1c, 0x0f, 0x05);
 
 	/* assert & de-assert reset of R_I2C */
-	reg = mmio_read_32(SUNXI_R_PRCM_BASE + 0x19c);
-	mmio_write_32(SUNXI_R_PRCM_BASE + 0x19c, reg & ~BIT(16));
-	mmio_write_32(SUNXI_R_PRCM_BASE + 0x19c, reg | BIT(16));
+	mmio_clrbits_32(SUNXI_R_PRCM_BASE + 0x19c, BIT(16));
+	mmio_setbits_32(SUNXI_R_PRCM_BASE + 0x19c, BIT(16));
 
 	/* un-gate R_I2C clock */
-	mmio_write_32(SUNXI_R_PRCM_BASE + 0x19c, reg | BIT(16) | BIT(0));
+	mmio_setbits_32(SUNXI_R_PRCM_BASE + 0x19c, BIT(16) | BIT(0));
 
 	/* call mi2cv driver */
 	i2c_init((void *)SUNXI_R_I2C_BASE);
@@ -56,13 +50,7 @@ static int sunxi_init_r_i2c(void)
 
 int axp_i2c_read(uint8_t chip, uint8_t reg, uint8_t *val)
 {
-	int ret;
-
-	ret = i2c_write(chip, 0, 0, &reg, 1);
-	if (ret)
-		return ret;
-
-	return i2c_read(chip, 0, 0, val, 1);
+	return i2c_read(chip, reg, 1, val, 1);
 }
 
 int axp_i2c_write(uint8_t chip, uint8_t reg, uint8_t val)
