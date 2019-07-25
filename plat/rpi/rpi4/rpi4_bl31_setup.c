@@ -114,7 +114,7 @@ void bl31_early_platform_setup2(u_register_t arg0, u_register_t arg1,
 	mmio_write_32(RPI4_LOCAL_CONTROL_BASE_ADDRESS, 0);
 
 	/* LOCAL_PRESCALER; divide-by (0x80000000 / register_val) == 1 */
-	mmio_write_32(RPI4_LOCAL_CONTROL_PRESCALER_OFFSET, 0x80000000);
+	mmio_write_32(RPI4_LOCAL_CONTROL_PRESCALER, 0x80000000);
 
 	/* Initialize the console to provide early debug support */
 	rpi3_console_init();

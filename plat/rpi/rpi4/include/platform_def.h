@@ -158,6 +158,6 @@
 /*
  * System counter
  */
-#define SYS_COUNTER_FREQ_IN_TICKS	ULL(2700000)
+#define SYS_COUNTER_FREQ_IN_TICKS	ULL(54000000)
 
 #endif /* PLATFORM_DEF_H */
