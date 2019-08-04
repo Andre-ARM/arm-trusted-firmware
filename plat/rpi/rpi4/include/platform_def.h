@@ -152,7 +152,6 @@
  * Serial-related constants.
  */
 #define PLAT_RPI3_UART_BASE		RPI3_MINI_UART_BASE
-#define PLAT_RPI3_UART_CLK_IN_HZ	RPI3_MINI_UART_CLK_IN_HZ
 #define PLAT_RPI3_UART_BAUDRATE		ULL(115200)
 
 /*

@@ -94,6 +94,17 @@ static uintptr_t rpi4_get_dtb_address(void)
 #endif
 }
 
+static void ldelay(register_t delay)
+{
+	__asm__ volatile (
+		"1:\tcbz %0, 2f\n\t"
+		"sub %0, %0, #1\n\t"
+		"b 1b\n"
+		"2:"
+		: "=&r" (delay): "0" (delay)
+	);
+}
+
 /*******************************************************************************
  * Perform any BL31 early platform setup. Here is an opportunity to copy
  * parameters passed by the calling EL (S-EL1 in BL2 & EL3 in BL1) before
@@ -106,6 +117,8 @@ void bl31_early_platform_setup2(u_register_t arg0, u_register_t arg1,
 				u_register_t arg2, u_register_t arg3)
 
 {
+	uint32_t div_reg;
+
 	/*
 	 * LOCAL_CONTROL:
 	 * Bit 9 clear: Increment by 1 (vs. 2).
@@ -116,8 +129,21 @@ void bl31_early_platform_setup2(u_register_t arg0, u_register_t arg1,
 	/* LOCAL_PRESCALER; divide-by (0x80000000 / register_val) == 1 */
 	mmio_write_32(RPI4_LOCAL_CONTROL_PRESCALER, 0x80000000);
 
-	/* Initialize the console to provide early debug support */
-	rpi3_console_init();
+	/* Early GPU firmware revisions need a little break here. */
+	ldelay(100000);
+
+	/*
+	 * Initialize the console to provide early debug support.
+	 * Different GPU firmware revisions set up the VPU divider differently,
+	 * so read the actual divider register to learn the UART base clock
+	 * rate. The divider is encoded as a 12.12 fixed point number, but we
+	 * just care about the integer part of it.
+	 */
+	div_reg = mmio_read_32(RPI4_CLOCK_BASE + RPI4_VPU_CLOCK_DIVIDER);
+	div_reg = (div_reg >> 12) & 0xfff;
+	if (div_reg == 0)
+		div_reg = 1;
+	rpi3_console_init(PLAT_RPI4_VPU_CLK_RATE / div_reg);
 
 	bl33_image_ep_info.pc = plat_get_ns_image_entrypoint();
 	bl33_image_ep_info.spsr = rpi3_get_spsr_for_bl33_entry();

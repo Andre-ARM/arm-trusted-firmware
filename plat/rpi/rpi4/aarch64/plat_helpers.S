@@ -136,7 +136,7 @@ endfunc platform_mem_init
 	 */
 func plat_crash_console_init
 	mov_imm	x0, PLAT_RPI3_UART_BASE
-	mov_imm	x1, PLAT_RPI3_UART_CLK_IN_HZ
+	mov_imm	x1, PLAT_RPI4_VPU_CLK_RATE
 	mov_imm	x2, PLAT_RPI3_UART_BAUDRATE
 	b	console_16550_core_init
 endfunc plat_crash_console_init
